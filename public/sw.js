@@ -1,23 +1,20 @@
-const CACHE_NAME = 'wh-dashboard-v1';
-const ASSETS = [
-  '/',
-  '/manifest.json',
-  '/icon-192x192.png',
-  '/icon-512x512.png'
-];
-
+// Safe, non-intrusive service worker for PWA installability
 self.addEventListener('install', (e) => {
+  self.skipWaiting();
+});
+
+// Clear any previous PWA caches (like cached dynamic index pages) on activation
+self.addEventListener('activate', (e) => {
   e.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS);
-    })
+    caches.keys().then((keys) => {
+      return Promise.all(
+        keys.map((key) => caches.delete(key))
+      );
+    }).then(() => self.clients.claim())
   );
 });
 
 self.addEventListener('fetch', (e) => {
-  e.respondWith(
-    caches.match(e.request).then((res) => {
-      return res || fetch(e.request);
-    })
-  );
+  // Empty fetch handler is sufficient for PWA installability requirements
+  // and prevents any caching/CORS interference with Supabase or Next.js routes.
 });
