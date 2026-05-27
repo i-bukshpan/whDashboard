@@ -35,12 +35,14 @@ export default function ContactsSidebar({ selectedContactId, onSelectContact }: 
   const [contacts, setContacts] = useState<ContactWithLastMessage[]>([]);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showBotsModal, setShowBotsModal] = useState(false);
   const supabase = createClient();
 
-  useEffect(() => {
-    (async () => {
+  const fetchContacts = async (active: boolean) => {
+    try {
       setLoading(true);
+      setErrorMsg(null);
       const { data, error } = await supabase
         .from('contacts')
         .select('*, bots(*)')
@@ -48,31 +50,60 @@ export default function ContactsSidebar({ selectedContactId, onSelectContact }: 
 
       if (error) {
         console.error('Error fetching contacts:', error.message, error.details, error.hint);
-        setLoading(false);
+        if (active) {
+          setErrorMsg(error.message || 'שגיאה בטעינת אנשי קשר');
+          setLoading(false);
+        }
         return;
       }
 
       const list: ContactWithLastMessage[] = await Promise.all(
         (data || []).map(async (c) => {
-          const { data: msgs } = await supabase
-            .from('messages')
-            .select('content, created_at, direction')
-            .eq('contact_id', c.id)
-            .order('created_at', { ascending: false })
-            .limit(1);
-          const m = msgs?.[0];
-          return {
-            ...c,
-            assigned_bot: c.bots || null,
-            last_message: m?.content ?? null,
-            last_message_time: m?.created_at ?? null,
-            last_message_direction: m?.direction ?? null,
-          } as ContactWithLastMessage;
+          try {
+            const { data: msgs } = await supabase
+              .from('messages')
+              .select('content, created_at, direction')
+              .eq('contact_id', c.id)
+              .order('created_at', { ascending: false })
+              .limit(1);
+            const m = msgs?.[0];
+            return {
+              ...c,
+              assigned_bot: c.bots || null,
+              last_message: m?.content ?? null,
+              last_message_time: m?.created_at ?? null,
+              last_message_direction: m?.direction ?? null,
+            } as ContactWithLastMessage;
+          } catch (err: any) {
+            console.error('Error fetching last msg for contact', c.id, err);
+            return {
+              ...c,
+              assigned_bot: c.bots || null,
+              last_message: null,
+              last_message_time: null,
+              last_message_direction: null,
+            } as ContactWithLastMessage;
+          }
         })
       );
-      setContacts(list);
-      setLoading(false);
-    })();
+
+      if (active) {
+        setContacts(list);
+        setLoading(false);
+      }
+    } catch (err: any) {
+      console.error('Unhandled error in ContactsSidebar:', err);
+      if (active) {
+        setErrorMsg(err.message || 'שגיאת מערכת לא צפויה');
+        setLoading(false);
+      }
+    }
+  };
+
+  useEffect(() => {
+    let active = true;
+    fetchContacts(active);
+    return () => { active = false; };
   }, []);
 
   // Realtime – contacts
@@ -185,7 +216,26 @@ export default function ContactsSidebar({ selectedContactId, onSelectContact }: 
 
       {/* List */}
       <div style={{ flex: 1, overflowY: 'auto' }}>
-        {loading ? (
+        {errorMsg ? (
+          <div style={{ padding: 20, textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center' }}>
+            <p style={{ fontSize: '.84rem', color: '#b91c1c', fontWeight: 500 }}>{errorMsg}</p>
+            <button
+              onClick={() => fetchContacts(true)}
+              style={{
+                padding: '6px 12px',
+                borderRadius: 8,
+                background: 'var(--green)',
+                color: '#fff',
+                border: 'none',
+                fontSize: '.78rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              נסה שוב
+            </button>
+          </div>
+        ) : loading ? (
           <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
             {[1,2,3,4,5].map(i => (
               <div key={i} style={{ display:'flex', gap:12, alignItems:'center' }}>
